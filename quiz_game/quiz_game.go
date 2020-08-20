@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type problem struct {
@@ -14,7 +15,9 @@ type problem struct {
 }
 
 func main() {
-	filename := flag.String("filename", "problems.csv", "the CSV file containing questions and answers.")
+	filename := flag.String("filename", "problems.csv", "the CSV file containing questions and answers")
+	timeLimit := flag.Int("timeLimit", 3, "the default timelimit for the quiz in seconds")
+	_ = timeLimit
 	flag.Parse()
 
 	file, fileErr := os.Open(*filename)
@@ -30,19 +33,39 @@ func main() {
 
 	problems := parseLinesToProblems(lines)
 	correct := 0
+	timer := time.NewTimer(time.Duration(*timeLimit) * time.Second)
+
 	for i, p := range problems {
 		fmt.Printf("Problem %d: %s = \n", i+1, p.q)
 
-		var answer string
-		fmt.Scanf("%s\n", &answer)
+		select {
+		case <-timer.C:
+			finish(correct, len(lines))
+		default:
+			answerChan := make(chan string)
+			go func() {
+				var answer string
+				fmt.Scanf("%s\n", &answer)
+				answerChan <- answer
+			}()
 
-		if answer == p.a {
-			correct++
+			select {
+			case answer := <-answerChan:
+				if answer == p.a {
+					correct++
+				}
+			case <-timer.C:
+				finish(correct, len(lines))
+			}
 		}
 	}
-	fmt.Printf("%d / %d\n", correct, len(lines))
+	finish(correct, len(lines))
 }
 
+func finish(correct int, total int) {
+	fmt.Printf("%d / %d\n", correct, total)
+	os.Exit(0)
+}
 func exit(message string, code int) {
 	fmt.Println(message)
 	os.Exit(code)
